@@ -942,7 +942,7 @@ SELECT c.*
 FROM chairs c
 LEFT JOIN latest_statuses ls ON ls.chair_id = c.id
 WHERE c.is_active = 1
-  AND (ls.status IS NULL OR ls.status = 'COMPLETED');
+  AND (ls.status IS NULL OR ls.status = 'COMPLETED')
 `,
 	)
 	if err != nil {
