@@ -94,6 +94,13 @@ type chairPostCoordinateResponse struct {
 	RecordedAt int64 `json:"recorded_at"`
 }
 
+func myAbs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &Coordinate{}
@@ -123,6 +130,22 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 
 	location := &ChairLocation{}
 	if err := tx.GetContext(ctx, location, `SELECT * FROM chair_locations WHERE id = ?`, chairLocationID); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	beforeLocation := &ChairLocation{}
+	if err := tx.GetContext(ctx, beforeLocation, `SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`, chair.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	if _, err := tx.ExecContext(
+		ctx,
+		`UPDATE chairs SET total_distance = total_distance + ?, total_distance_updated_at = NOW() WHERE id = ?`,
+		myAbs(beforeLocation.Latitude-req.Latitude)+myAbs(beforeLocation.Longitude-req.Longitude),
+		chair.ID,
+	); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
