@@ -364,8 +364,6 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cache.Set([]byte("latest.ride."+rideID), []byte("MATCHING"), 10)
-
 	var rideCount int
 	if err := tx.GetContext(ctx, &rideCount, `SELECT COUNT(*) FROM rides WHERE user_id = ? `, user.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -442,6 +440,8 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	cache.Set([]byte("latest.ride."+rideID), []byte("MATCHING"), 10)
 
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
 		RideID: rideID,
@@ -581,8 +581,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-
-	cache.Set([]byte("latest.ride."+rideID), []byte("COMPLETED"), 10)
+	status = "COMPLETED"
 
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -637,6 +636,8 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	cache.Set([]byte("latest.ride."+rideID), []byte(status), 10)
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),

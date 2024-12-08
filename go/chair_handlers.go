@@ -169,6 +169,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ride := &Ride{}
+	status := ""
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusInternalServerError, err)
@@ -186,7 +187,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
-				cache.Set([]byte("latest.ride."+ride.ID), []byte("PICKUP"), 10)
+				status = "PICKUP"
 			}
 
 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
@@ -194,7 +195,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
-				cache.Set([]byte("latest.ride."+ride.ID), []byte("ARRIVED"), 10)
+				status = "ARRIVED"
 			}
 		}
 	}
@@ -202,6 +203,10 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+
+	if status != "" {
+		cache.Set([]byte("latest.ride."+ride.ID), []byte(status), 10)
 	}
 
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
