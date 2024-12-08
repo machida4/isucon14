@@ -155,6 +155,17 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+	} else {
+		if _, err := tx.ExecContext(
+			ctx,
+			`UPDATE chairs SET latitude = ?, longitude = ? WHERE id = ?`,
+			req.Latitude,
+			req.Longitude,
+			chair.ID,
+		); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	ride := &Ride{}
