@@ -930,8 +930,8 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		&chairs,
 		`
 WITH latest_statuses AS (
-  SELECT rs.ride_id, rs.status
-  FROM ride_statuses rs
+  SELECT r.chair_id, rs.ride_id, rs.status
+  FROM ride_statuses rs JOIN rides r ON rs.ride_id = r.id
   WHERE rs.created_at = (
     SELECT MAX(rs2.created_at)
     FROM ride_statuses rs2
@@ -940,7 +940,7 @@ WITH latest_statuses AS (
 )
 SELECT c.*
 FROM chairs c
-LEFT JOIN latest_statuses ls ON ls.ride_id = c.id
+LEFT JOIN latest_statuses ls ON ls.chair_id = c.id
 WHERE c.is_active = 1
   AND (ls.status IS NULL OR ls.status = 'COMPLETED');
 `,
