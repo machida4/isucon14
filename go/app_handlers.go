@@ -1021,6 +1021,11 @@ WHERE latest_ride.chair_id IS NULL OR latest_ride.status = 'COMPLETED'
 		return
 	}
 
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, &appGetNearbyChairsResponse{
 		Chairs:      nearbyChairs,
 		RetrievedAt: retrievedAt.UnixMilli(),
