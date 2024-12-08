@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -108,6 +109,8 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	time.Sleep(100 * time.Millisecond)
 
 	chair := ctx.Value("chair").(*Chair)
 
