@@ -66,10 +66,10 @@ func internalGetMatching2(w http.ResponseWriter, r *http.Request) {
 		LIMIT 1
 	`); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			w.WriteHeader(http.StatusNoContent)
+			//w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err)
+		//writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -90,10 +90,10 @@ func internalGetMatching2(w http.ResponseWriter, r *http.Request) {
 	`
 	if err := db.GetContext(ctx, matched, query, ride.PickupLatitude, ride.PickupLongitude); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			w.WriteHeader(http.StatusNoContent)
+			//w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err)
+		//writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -103,11 +103,11 @@ func internalGetMatching2(w http.ResponseWriter, r *http.Request) {
 		SET chair_id = ? 
 		WHERE id = ?
 	`, matched.ID, ride.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		//writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	//w.WriteHeader(http.StatusNoContent)
 }
 
 func internalGetMatchingNoContent(w http.ResponseWriter, r *http.Request) {
