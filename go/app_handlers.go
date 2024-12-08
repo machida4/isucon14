@@ -965,23 +965,18 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		// 	return
 		// }
 
-		chairLocation, err := fetchChairLocationFromCache(chair.ID, tx, ctx)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				continue
-			}
-			writeError(w, http.StatusInternalServerError, err)
-			return
+		if !chair.Latitude.Valid || !chair.Longitude.Valid {
+			continue
 		}
 
-		if calculateDistance(coordinate.Latitude, coordinate.Longitude, chairLocation.Latitude, chairLocation.Longitude) <= distance {
+		if calculateDistance(coordinate.Latitude, coordinate.Longitude, int(chair.Latitude.Int64), int(chair.Longitude.Int64)) <= distance {
 			nearbyChairs = append(nearbyChairs, appGetNearbyChairsResponseChair{
 				ID:    chair.ID,
 				Name:  chair.Name,
 				Model: chair.Model,
 				CurrentCoordinate: Coordinate{
-					Latitude:  chairLocation.Latitude,
-					Longitude: chairLocation.Longitude,
+					Latitude:  int(chair.Latitude.Int64),
+					Longitude: int(chair.Longitude.Int64),
 				},
 			})
 		}
