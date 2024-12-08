@@ -149,28 +149,42 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// machida-memo: ここからトランザクション切り直す
+
+	tx2, err := db.Beginx()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer tx2.Rollback()
+
 	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
+	if err := tx2.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 	} else {
-		status, err := getLatestRideStatus(ctx, tx, ride.ID)
+		status, err := getLatestRideStatus(ctx, tx2, ride.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 		if status != "COMPLETED" && status != "CANCELED" {
 			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
-				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "PICKUP"); err != nil {
+				if _, err := tx2.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "PICKUP"); err != nil {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
 			}
 
 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
-				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
+				if _, err := tx2.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
@@ -178,7 +192,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx2.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
