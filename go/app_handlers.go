@@ -358,7 +358,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 	// 新しいライドに対してマッチング処理を呼び出し
 	go func() {
 		// 別ゴルーチンで非同期的にマッチング処理を呼び出す
-		internalGetMatching2(w, r)
+		internalGetMatching2(r, rideID, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude)
 	}()
 
 	var rideCount int
