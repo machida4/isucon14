@@ -849,7 +849,7 @@ func fetchChairLocationFromCache(chairId string, tx *sqlx.Tx, ctx context.Contex
 		// 試した範囲では、structにjsonのアノテーションなどを書く必要はなさそう
 		err = tx.GetContext(
 			ctx,
-			res,
+			&res,
 			`SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`,
 			chairId,
 		)
