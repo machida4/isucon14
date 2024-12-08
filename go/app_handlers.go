@@ -928,7 +928,22 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	err = tx.SelectContext(
 		ctx,
 		&chairs,
-		`SELECT * FROM chairs WHERE is_active = 1`,
+		`
+WITH latest_statuses AS (
+  SELECT rs.ride_id, rs.status
+  FROM ride_statuses rs
+  WHERE rs.created_at = (
+    SELECT MAX(rs2.created_at)
+    FROM ride_statuses rs2
+    WHERE rs2.ride_id = rs.ride_id
+  )
+)
+SELECT c.*
+FROM chairs c
+LEFT JOIN latest_statuses ls ON ls.ride_id = c.id
+WHERE c.is_active = 1
+  AND (ls.status IS NULL OR ls.status = 'COMPLETED');
+`,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -937,28 +952,28 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
 	for _, chair := range chairs {
-		rides := []*Ride{}
-		if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id = ? ORDER BY created_at DESC`, chair.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+		// rides := []*Ride{}
+		// if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id = ? ORDER BY created_at DESC`, chair.ID); err != nil {
+		// 	writeError(w, http.StatusInternalServerError, err)
+		// 	return
+		// }
 
-		skip := false
-		for _, ride := range rides {
-			// 過去にライドが存在し、かつ、それが完了していない場合はスキップ
-			status, err := getLatestRideStatus(ctx, tx, ride.ID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-			if status != "COMPLETED" {
-				skip = true
-				break
-			}
-		}
-		if skip {
-			continue
-		}
+		// skip := false
+		// for _, ride := range rides {
+		// 	// 過去にライドが存在し、かつ、それが完了していない場合はスキップ
+		// 	status, err := getLatestRideStatus(ctx, tx, ride.ID)
+		// 	if err != nil {
+		// 		writeError(w, http.StatusInternalServerError, err)
+		// 		return
+		// 	}
+		// 	if status != "COMPLETED" {
+		// 		skip = true
+		// 		break
+		// 	}
+		// }
+		// if skip {
+		// 	continue
+		// }
 
 		// 最新の位置情報を取得
 		// chairLocation := &ChairLocation{}
