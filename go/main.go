@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	_ "net/http/pprof"
+
 	"github.com/felixge/fgprof"
 )
 
@@ -26,8 +28,8 @@ var db *sqlx.DB
 func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
 	go func() {
- 		log.Println(http.ListenAndServe(":6060", nil))
- 	}()
+		log.Println(http.ListenAndServe(":6060", nil))
+	}()
 
 	mux := setup()
 	slog.Info("Listening on :8080")
@@ -129,6 +131,38 @@ type postInitializeResponse struct {
 	Language string `json:"language"`
 }
 
+func initChairDistances(ctx context.Context) {
+	chairs := []chairWithDetail{}
+	if err := db.SelectContext(ctx, &chairs, `SELECT id,
+		 owner_id,
+		 name,
+		 access_token,
+		 model,
+		 is_active,
+		 created_at,
+		 updated_at,
+		 IFNULL(total_distance, 0) AS total_distance,
+		 total_distance_updated_at
+FROM chairs
+		 LEFT JOIN (SELECT chair_id,
+												SUM(IFNULL(distance, 0)) AS total_distance,
+												MAX(created_at)          AS total_distance_updated_at
+								 FROM (SELECT chair_id,
+															created_at,
+															ABS(latitude - LAG(latitude) OVER (PARTITION BY chair_id ORDER BY created_at)) +
+															ABS(longitude - LAG(longitude) OVER (PARTITION BY chair_id ORDER BY created_at)) AS distance
+											 FROM chair_locations) tmp
+								 GROUP BY chair_id) distance_table ON distance_table.chair_id = chairs.id
+`); err != nil {
+		// writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	for _, chair := range chairs {
+		db.ExecContext(ctx, "UPDATE chairs SET total_distance = ?, total_distance_updated_at = ? WHERE id = ?", chair.TotalDistance, chair.TotalDistanceUpdatedAt, chair.ID)
+	}
+}
+
 func postInitialize(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &postInitializeRequest{}
@@ -146,6 +180,8 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	initChairDistances(ctx)
 
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
