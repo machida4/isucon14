@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -193,6 +194,15 @@ type ownerGetChairResponseChair struct {
 func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	owner := ctx.Value("owner").(*Owner)
+	res := ownerGetChairResponse{}
+
+	if item, err := cache.Get([]byte("key." + owner.ID)); err == nil {
+		if err := json.Unmarshal(item, &res); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, res)
+	}
 
 	chairs := []chairWithDetail{}
 	if err := db.SelectContext(ctx, &chairs, `SELECT id,
@@ -221,7 +231,6 @@ WHERE owner_id = ?
 		return
 	}
 
-	res := ownerGetChairResponse{}
 	for _, chair := range chairs {
 		c := ownerGetChairResponseChair{
 			ID:            chair.ID,
@@ -237,5 +246,17 @@ WHERE owner_id = ?
 		}
 		res.Chairs = append(res.Chairs, c)
 	}
+
+	byteData, err := json.Marshal(res) // err処理割愛
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	cache.Set(
+		[]byte("key."+owner.ID),
+		byteData,
+		3, // [sec] キャッシュの有効時間, 秒で指定
+	)
+
 	writeJSON(w, http.StatusOK, res)
 }

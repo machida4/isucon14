@@ -18,17 +18,21 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	_ "net/http/pprof"
+
+	"github.com/coocood/freecache"
 	"github.com/felixge/fgprof"
 )
 
 var db *sqlx.DB
+var cache *freecache.Cache
 
 func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
 	go func() {
- 		log.Println(http.ListenAndServe(":6060", nil))
- 	}()
+		log.Println(http.ListenAndServe(":6060", nil))
+	}()
 
+	cache = freecache.NewCache(100 * 1024 * 1024) // 100MiB
 	mux := setup()
 	slog.Info("Listening on :8080")
 	http.ListenAndServe(":8080", mux)
