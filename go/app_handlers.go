@@ -355,6 +355,12 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 新しいライドに対してマッチング処理を呼び出し
+	go func() {
+		// 別ゴルーチンで非同期的にマッチング処理を呼び出す
+		internalGetMatching2(w, r)
+	}()
+
 	var rideCount int
 	if err := tx.GetContext(ctx, &rideCount, `SELECT COUNT(*) FROM rides WHERE user_id = ? `, user.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
