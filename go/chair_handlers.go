@@ -119,7 +119,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	var dbChair Chair
-	if err := tx.GetContext(ctx, &dbChair, "SELECT * FROM chairs WHERE id = ? FOR UPDATE", chair.ID); err != nil {
+	if err := tx.GetContext(ctx, &dbChair, "SELECT * FROM chairs WHERE id = ?", chair.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
