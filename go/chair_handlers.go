@@ -143,14 +143,14 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	// 	return
 	// }
 
-	if !dbChair.Latitude.Valid || !dbChair.Longitude.Valid {
+	if dbChair.Latitude.Valid && dbChair.Longitude.Valid {
 		if _, err := tx.ExecContext(
 			ctx,
 			`UPDATE chairs SET total_distance = total_distance + ?, total_distance_updated_at = CURRENT_TIMESTAMP(6), latitude = ?, longitude = ? WHERE id = ?`,
 			myAbs(int(dbChair.Latitude.Int64)-req.Latitude)+myAbs(int(dbChair.Longitude.Int64)-req.Longitude),
-			chair.ID,
 			req.Latitude,
 			req.Longitude,
+			chair.ID,
 		); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
