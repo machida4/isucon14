@@ -154,8 +154,7 @@ FROM chairs
 											 FROM chair_locations) tmp
 								 GROUP BY chair_id) distance_table ON distance_table.chair_id = chairs.id
 `); err != nil {
-		// writeError(w, http.StatusInternalServerError, err)
-		return
+		panic(err)
 	}
 
 	for _, chair := range chairs {
