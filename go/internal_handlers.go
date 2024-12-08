@@ -111,5 +111,58 @@ func internalGetMatching2(r *http.Request, id string, lati int, longi int) {
 }
 
 func internalGetMatchingNoContent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// 最も待っているリクエストを取得
+	ride := &Ride{}
+	if err := db.GetContext(ctx, ride, `
+		SELECT * 
+		FROM rides 
+		WHERE chair_id IS NULL 
+		ORDER BY created_at 
+		LIMIT 1
+	`); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// リクエストの位置を基に最も近い空いている椅子を取得（マンハッタン距離を使用）
+	matched := &Chair{}
+	query := `
+		SELECT c.*
+		FROM chairs c
+		JOIN chair_locations cl ON c.id = cl.chair_id
+		WHERE c.is_active = TRUE
+		AND NOT EXISTS (
+			SELECT 1 FROM rides r WHERE r.chair_id = c.id
+		)
+		ORDER BY (
+			ABS(cl.latitude - ?) + ABS(cl.longitude - ?)
+		) ASC
+		LIMIT 1
+	`
+	if err := db.GetContext(ctx, matched, query, ride.PickupLatitude, ride.PickupLongitude); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// リクエストに椅子を割り当て
+	if _, err := db.ExecContext(ctx, `
+		UPDATE rides 
+		SET chair_id = ? 
+		WHERE id = ?
+	`, matched.ID, ride.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
