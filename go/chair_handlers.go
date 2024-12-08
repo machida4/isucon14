@@ -113,12 +113,6 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 
 	chair := ctx.Value("chair").(*Chair)
 
-	// 即時レスポンスを返す
-	w.WriteHeader(http.StatusOK)
-	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
-		RecordedAt: time.Now().UnixMilli(),
-	})
-
 	// 非同期で実行
 	go func() {
 		tx, err := db.Beginx()
@@ -206,6 +200,12 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}()
+
+	// 即時レスポンスを返す
+	w.WriteHeader(http.StatusOK)
+	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
+		RecordedAt: time.Now().UnixMilli(),
+	})
 }
 
 type simpleUser struct {
