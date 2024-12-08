@@ -102,6 +102,7 @@ func setup() http.Handler {
 		authedMux := mux.With(ownerAuthMiddleware)
 		authedMux.HandleFunc("GET /api/owner/sales", ownerGetSales)
 		authedMux.HandleFunc("GET /api/owner/chairs", ownerGetChairs)
+		authedMux.HandleFunc("GET /api/owner/chairs", ownerGetChairsOld)
 	}
 
 	// chair handlers
