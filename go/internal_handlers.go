@@ -14,11 +14,12 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	rides := []Ride{}
 
 	chairs := []Chair{}
-	if err := db.SelectContext(ctx, &chairs, "SELECT * FROM chairs c WHERE c.is_active = TRUE"); err != nil {
-
+	if err := db.SelectContext(ctx, &chairs, "SELECT * FROM chairs c WHERE c.is_active = TRUE AND latitude IS NOT NULL"); err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 
-	if err := db.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id IS NULL AND latitude IS NOT NULL ORDER BY created_at`); err != nil {
+	if err := db.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			w.WriteHeader(http.StatusNoContent)
 			return
