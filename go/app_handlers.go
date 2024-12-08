@@ -925,27 +925,55 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	// 以下の条件を満たす椅子を取得したい
-	// 過去に rideが存在しない または (過去にrideが存在し、かつ、最新のrideのstatusがCOMPLETED)
+	// 過去に rideが存在しない または (過去にrideが存在し、かつ、rideの最新のride_statusがすべてCOMPLETED)
 	chairs := []Chair{}
 	err = tx.SelectContext(
 		ctx,
 		&chairs,
+		//	`
+		//
+		// SELECT c.*
+		// FROM chairs c
+		// LEFT JOIN (
+		//
+		//	SELECT r.chair_id, rs.status, r.updated_at
+		//	FROM rides r
+		//	LEFT JOIN ride_statuses rs ON r.id = rs.ride_id
+		//	WHERE rs.status = 'COMPLETED'
+		//	AND r.updated_at = (
+		//	    SELECT MAX(updated_at)
+		//	    FROM rides
+		//	    WHERE chair_id = r.chair_id
+		//	)
+		//
+		// ) latest_ride ON c.id = latest_ride.chair_id
+		// WHERE latest_ride.chair_id IS NULL OR latest_ride.status = 'COMPLETED'
+		//
+		//	`,
 		`
+WITH latest_statuses AS (
+  SELECT rs.ride_id, r.chair_id, rs.status
+  FROM ride_statuses rs JOIN rides r ON rs.ride_id = r.id
+  WHERE rs.created_at = (
+    SELECT MAX(rs2.created_at)
+    FROM ride_statuses rs2
+    WHERE rs2.ride_id = rs.ride_id
+  )
+)
 SELECT c.*
 FROM chairs c
-LEFT JOIN (
-    SELECT r.chair_id, rs.status, r.updated_at
-    FROM rides r
-    LEFT JOIN ride_statuses rs ON r.id = rs.ride_id
-    WHERE rs.status = 'COMPLETED'
-    AND r.updated_at = (
-        SELECT MAX(updated_at)
-        FROM rides
-        WHERE chair_id = r.chair_id
-    )
-) latest_ride ON c.id = latest_ride.chair_id
-WHERE latest_ride.chair_id IS NULL OR latest_ride.status = 'COMPLETED'
-		`,
+LEFT JOIN latest_statuses ls ON ls.chair_id = c.id
+WHERE c.is_active = 1
+  AND (
+    ls.ride_id IS NULL
+    OR (ls.status = 'COMPLETED' AND NOT EXISTS (
+      SELECT 1
+      FROM ride_statuses rs
+      WHERE rs.ride_id = ls.ride_id
+      AND rs.status != 'COMPLETED'
+    ))
+  )
+`,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
