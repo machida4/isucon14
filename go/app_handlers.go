@@ -662,15 +662,16 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user := ctx.Value("user").(*User)
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
-
+	// 最新のライドを取得
 	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, user.ID); err != nil {
+	err := db.GetContext(ctx, ride, `
+		SELECT id, chair_id, pickup_latitude, pickup_longitude, destination_latitude, destination_longitude, created_at, updated_at
+		FROM rides
+		WHERE user_id = ?
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, user.ID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, http.StatusOK, &appGetNotificationResponse{
 				RetryAfterMs: 30,
@@ -681,11 +682,19 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 未送信のステータスを取得
 	yetSentRideStatus := RideStatus{}
 	status := ""
-	if err := tx.GetContext(ctx, &yetSentRideStatus, `SELECT * FROM ride_statuses WHERE ride_id = ? AND app_sent_at IS NULL ORDER BY created_at ASC LIMIT 1`, ride.ID); err != nil {
+	err = db.GetContext(ctx, &yetSentRideStatus, `
+		SELECT id, status
+		FROM ride_statuses
+		WHERE ride_id = ? AND app_sent_at IS NULL
+		ORDER BY created_at ASC
+		LIMIT 1
+	`, ride.ID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			status, err = getLatestRideStatus(ctx, tx, ride.ID)
+			status, err = getLatestRideStatus(ctx, db, ride.ID)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err)
 				return
@@ -698,12 +707,24 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 		status = yetSentRideStatus.Status
 	}
 
+	// 運賃を計算
+	tx, err := db.Beginx()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer tx.Rollback()
 	fare, err := calculateDiscountedFare(ctx, tx, user.ID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 
+	// 応答データの作成
 	response := &appGetNotificationResponse{
 		Data: &appGetNotificationResponseData{
 			RideID: ride.ID,
@@ -723,14 +744,20 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 		RetryAfterMs: 30,
 	}
 
+	// Chair情報を取得する場合
 	if ride.ChairID.Valid {
 		chair := &Chair{}
-		if err := tx.GetContext(ctx, chair, `SELECT * FROM chairs WHERE id = ?`, ride.ChairID); err != nil {
+		err := db.GetContext(ctx, chair, `
+			SELECT id, name, model
+			FROM chairs
+			WHERE id = ?
+		`, ride.ChairID)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		stats, err := getChairStats(ctx, tx, chair.ID)
+		stats, err := getChairStats(ctx, db, chair.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -744,53 +771,88 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 未送信ステータスを更新
 	if yetSentRideStatus.ID != "" {
-		_, err := tx.ExecContext(ctx, `UPDATE ride_statuses SET app_sent_at = CURRENT_TIMESTAMP(6) WHERE id = ?`, yetSentRideStatus.ID)
+		_, err = db.ExecContext(ctx, `
+			UPDATE ride_statuses
+			SET app_sent_at = CURRENT_TIMESTAMP(6)
+			WHERE id = ?
+		`, yetSentRideStatus.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
+	// 応答を送信
 	writeJSON(w, http.StatusOK, response)
 }
 
-func getChairStats(ctx context.Context, tx *sqlx.Tx, chairID string) (appGetNotificationResponseChairStats, error) {
+func getChairStats(ctx context.Context, db *sqlx.DB, chairID string) (appGetNotificationResponseChairStats, error) {
 	stats := appGetNotificationResponseChairStats{}
 
+	// 必要なライド情報を一括取得
 	rides := []Ride{}
-	err := tx.SelectContext(
+	err := db.SelectContext(
 		ctx,
 		&rides,
-		`SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC`,
+		`SELECT id, evaluation
+		FROM rides
+		WHERE chair_id = ? AND id IN (
+			SELECT ride_id
+			FROM ride_statuses
+			WHERE status = 'COMPLETED'
+		)
+		ORDER BY updated_at DESC`,
 		chairID,
 	)
 	if err != nil {
 		return stats, err
 	}
 
+	if len(rides) == 0 {
+		// ライドがない場合はデフォルトの統計値を返す
+		return stats, nil
+	}
+
+	// ライドIDを収集
+	rideIDs := make([]string, len(rides))
+	for i, ride := range rides {
+		rideIDs[i] = ride.ID
+	}
+
+	// すべてのライドのステータスを一括取得
+	rideStatuses := []RideStatus{}
+	err = db.SelectContext(
+		ctx,
+		&rideStatuses,
+		`SELECT ride_id, status, created_at
+		FROM ride_statuses
+		WHERE ride_id IN (?)`,
+		rideIDs,
+	)
+	if err != nil {
+		return stats, err
+	}
+
+	// ステータスをライドIDごとにまとめる
+	statusMap := make(map[string][]RideStatus)
+	for _, status := range rideStatuses {
+		statusMap[status.RideID] = append(statusMap[status.RideID], status)
+	}
+
+	// 統計値の計算
 	totalRideCount := 0
 	totalEvaluation := 0.0
 	for _, ride := range rides {
-		rideStatuses := []RideStatus{}
-		err = tx.SelectContext(
-			ctx,
-			&rideStatuses,
-			`SELECT * FROM ride_statuses WHERE ride_id = ? ORDER BY created_at`,
-			ride.ID,
-		)
-		if err != nil {
-			return stats, err
+		statuses, exists := statusMap[ride.ID]
+		if !exists {
+			continue
 		}
 
 		var arrivedAt, pickupedAt *time.Time
 		var isCompleted bool
-		for _, status := range rideStatuses {
+		for _, status := range statuses {
 			if status.Status == "ARRIVED" {
 				arrivedAt = &status.CreatedAt
 			} else if status.Status == "CARRYING" {
@@ -800,15 +862,14 @@ func getChairStats(ctx context.Context, tx *sqlx.Tx, chairID string) (appGetNoti
 				isCompleted = true
 			}
 		}
-		if arrivedAt == nil || pickupedAt == nil {
-			continue
-		}
-		if !isCompleted {
+		if arrivedAt == nil || pickupedAt == nil || !isCompleted {
 			continue
 		}
 
 		totalRideCount++
-		totalEvaluation += float64(*ride.Evaluation)
+		if ride.Evaluation != nil {
+			totalEvaluation += float64(*ride.Evaluation)
+		}
 	}
 
 	stats.TotalRidesCount = totalRideCount
