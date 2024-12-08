@@ -76,7 +76,7 @@ nginx-error-log: ## Tail nginx error.log
 # 1xxを除いて少し並べかえる
 alp: ## Run alp
 	sudo alp ltsv --file $(NGINX_LOG) --sort sum --reverse \
-	--matching-groups='/api/chair/rides/[0-9a-zA-Z]+/status, /api/chair/rides/[0-9a-zA-Z]+/evaluation, /assets/[0-9a-zA-Z]+.js, /images/\d+.\w{3}' \
+	--matching-groups='/api/chair/rides/[0-9a-zA-Z]+/status, /api/chair/rides/[0-9a-zA-Z]+/evaluation, /api/app/rides/[0-9a-zA-Z]+/evaluation, /assets/.+.js, /images/.+.svg, /images/.+.png' \
 	-o 'count,2xx,3xx,4xx,5xx,method,uri,sum,avg,min,max,p90,p95,p99,stddev,min_body,max_body,sum_body,avg_body'\
 	> $(ALP_LOG)
 	echo $(DISCORD_WEBHOOK_URL)
