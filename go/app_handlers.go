@@ -792,54 +792,42 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 func getChairStats(ctx context.Context, tx *sqlx.Tx, chairID string) (appGetNotificationResponseChairStats, error) {
 	stats := appGetNotificationResponseChairStats{}
 
-	rides := []Ride{}
-	err := tx.SelectContext(
-		ctx,
-		&rides,
-		`SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC`,
-		chairID,
-	)
+	// クエリを1回で完結させる
+	query := `
+		SELECT 
+			COUNT(*) AS total_ride_count,
+			COALESCE(SUM(evaluation), 0) AS total_evaluation
+		FROM rides r
+		WHERE r.chair_id = ?
+		AND EXISTS (
+			SELECT 1
+			FROM ride_statuses rs
+			WHERE rs.ride_id = r.id
+			AND rs.status = 'COMPLETED'
+		)
+		AND EXISTS (
+			SELECT 1
+			FROM ride_statuses rs
+			WHERE rs.ride_id = r.id
+			AND rs.status = 'ARRIVED'
+		)
+		AND EXISTS (
+			SELECT 1
+			FROM ride_statuses rs
+			WHERE rs.ride_id = r.id
+			AND rs.status = 'CARRYING'
+		)
+	`
+
+	var totalRideCount int
+	var totalEvaluation float64
+
+	err := tx.QueryRowContext(ctx, query, chairID).Scan(&totalRideCount, &totalEvaluation)
 	if err != nil {
 		return stats, err
 	}
 
-	totalRideCount := 0
-	totalEvaluation := 0.0
-	for _, ride := range rides {
-		rideStatuses := []RideStatus{}
-		err = tx.SelectContext(
-			ctx,
-			&rideStatuses,
-			`SELECT * FROM ride_statuses WHERE ride_id = ? ORDER BY created_at`,
-			ride.ID,
-		)
-		if err != nil {
-			return stats, err
-		}
-
-		var arrivedAt, pickupedAt *time.Time
-		var isCompleted bool
-		for _, status := range rideStatuses {
-			if status.Status == "ARRIVED" {
-				arrivedAt = &status.CreatedAt
-			} else if status.Status == "CARRYING" {
-				pickupedAt = &status.CreatedAt
-			}
-			if status.Status == "COMPLETED" {
-				isCompleted = true
-			}
-		}
-		if arrivedAt == nil || pickupedAt == nil {
-			continue
-		}
-		if !isCompleted {
-			continue
-		}
-
-		totalRideCount++
-		totalEvaluation += float64(*ride.Evaluation)
-	}
-
+	// 結果を構造体にセット
 	stats.TotalRidesCount = totalRideCount
 	if totalRideCount > 0 {
 		stats.TotalEvaluationAvg = totalEvaluation / float64(totalRideCount)
