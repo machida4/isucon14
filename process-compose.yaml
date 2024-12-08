@@ -1,0 +1,35 @@
+vars:
+  RECORD_SECONDS: 60
+
+processes:
+  prof:
+    command: "echo 'pprof and fgprof are started\\npprof: http://localhost:8090 \\nfgprof: http://localhost:9090' | ./dispost"
+    depends_on:
+      pprof-record:
+        condition: process_completed_successfully
+      fgprof-record:
+        condition: process_completed_successfully
+    availability:
+      exit_on_skipped: true
+  pprof-record:
+    environment:
+      - "PPROF_TMPDIR=/home/isucon/pprof"
+    command: "go tool pprof -top http://localhost:6060/debug/pprof/profile?seconds={{.RECORD_SECONDS}}"
+  fgprof-record:
+    environment:
+      - "PPROF_TMPDIR=/home/isucon/fgprof"
+    command: "go tool pprof -top http://localhost:6060/debug/fgprof?seconds={{.RECORD_SECONDS}}"
+  pprof-server:
+    vars:
+      LATEST: $(ls -rt /home/isucon/pprof | tail -n 1)
+    command: "go tool pprof -http=0.0.0.0:8090 ~/pprof/{{.LATEST}}"
+    depends_on:
+      pprof-record:
+        condition: process_completed_successfully
+  fgprof-server:
+    vars:
+      LATEST: $(ls -rt /home/isucon/fgprof | tail -n 1)
+    command: "go tool pprof -http=0.0.0.0:9090 ~/fgprof/{{.LATEST}}"
+    depends_on:
+      fgprof-record:
+        condition: process_completed_successfully

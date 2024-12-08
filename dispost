@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# help
+function usage {
+	cat <<-EOS
+	Usage: $(basename "$0") [OPTION]...
+		-t VALUE    post text
+		-f VALUE    post file
+	EOS
+	exit 2
+}
+
+# DISCORD_WEBHOOK_URLが存在しなかったら直接指定されたurlをセット
+url=${DISCORD_WEBHOOK_URL:-https://discord.com/api/webhooks/000/XXX}
+
+# パイプ時の処理
+if [ -p /dev/stdin ]; then
+	text=`cat -`;
+	curl $url -H "Content-Type: application/json" -d @-<<-EOS
+		{ "content": "$text" }
+	EOS
+	exit 0
+fi
+
+while getopts f:t: OPT; do
+	case $OPT in
+		t ) curl $url -H "Content-Type: application/json" -d @-<<-EOS
+				{ "content": "$OPTARG" }
+			EOS
+;;
+		f ) curl $url -H "Content-Type: multipart/form-data" -F "file=@$OPTARG";;
+		* ) usage;;
+	esac
+done
+
+exit 0
