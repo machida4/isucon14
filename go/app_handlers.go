@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -831,6 +833,42 @@ type appGetNearbyChairsResponseChair struct {
 	CurrentCoordinate Coordinate `json:"current_coordinate"`
 }
 
+func fetchChairLocationFromCache(chairId string, tx *sqlx.Tx, ctx context.Context) (ChairLocation, error) {
+	var res ChairLocation
+
+	if item, err := cache.Get([]byte(fmt.Sprintf("key.%s", chairId))); err == nil {
+		// item.Valueに[]byte型の値があるので、string(item.Value)としても良いし、
+		// 以下のように構造体をjson.Marshalで詰めて、json.Unmarshalで取り出しても良い
+		if err := json.Unmarshal(item, &res); err != nil {
+			return res, err
+		}
+		return res, nil
+	} else {
+		// キャッシュヒットしなかった場合、DBなどにアクセスして値を得る。
+		// その後以下のように[]byteに詰めて、memcacheClient.Setを呼び出す
+		// 試した範囲では、structにjsonのアノテーションなどを書く必要はなさそう
+		err = tx.GetContext(
+			ctx,
+			res,
+			`SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`,
+			chairId,
+		)
+
+		if err != nil {
+			return res, err
+		}
+
+		byteData, _ := json.Marshal(res) // err処理割愛
+		cache.Set(
+			[]byte(fmt.Sprintf("key.%s", chairId)),
+			byteData,
+			1, // [sec] キャッシュの有効時間, 秒で指定
+		)
+
+		return res, nil
+	}
+}
+
 func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	latStr := r.URL.Query().Get("latitude")
@@ -912,13 +950,22 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 最新の位置情報を取得
-		chairLocation := &ChairLocation{}
-		err = tx.GetContext(
-			ctx,
-			chairLocation,
-			`SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`,
-			chair.ID,
-		)
+		// chairLocation := &ChairLocation{}
+		// err = tx.GetContext(
+		// 	ctx,
+		// 	chairLocation,
+		// 	`SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`,
+		// 	chair.ID,
+		// )
+		// if err != nil {
+		// 	if errors.Is(err, sql.ErrNoRows) {
+		// 		continue
+		// 	}
+		// 	writeError(w, http.StatusInternalServerError, err)
+		// 	return
+		// }
+
+		chairLocation, err := fetchChairLocationFromCache(chair.ID, tx, ctx)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				continue

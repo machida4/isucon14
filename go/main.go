@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"strconv"
 
+	"github.com/coocood/freecache"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-sql-driver/mysql"
@@ -23,6 +24,7 @@ import (
 	"github.com/felixge/fgprof"
 )
 
+var cache *freecache.Cache
 var db *sqlx.DB
 
 func main() {
@@ -30,6 +32,8 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe(":6060", nil))
 	}()
+
+	cache = freecache.NewCache(100 * 1024 * 1024) // 100MiB
 
 	mux := setup()
 	slog.Info("Listening on :8080")
