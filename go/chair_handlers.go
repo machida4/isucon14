@@ -192,7 +192,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
-		RecordedAt: chair.TotalDistanceUpdatedAt.Time.UnixMilli(),
+		RecordedAt: dbChair.TotalDistanceUpdatedAt.Time.UnixMilli(),
 	})
 }
 
