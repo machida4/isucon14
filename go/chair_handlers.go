@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -111,100 +113,99 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 
 	chair := ctx.Value("chair").(*Chair)
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
-
-	var dbChair Chair
-	if err := tx.GetContext(ctx, &dbChair, "SELECT * FROM chairs WHERE id = ? FOR UPDATE", chair.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	// beforeLocation := &ChairLocation{}
-	// tx.GetContext(ctx, beforeLocation, `SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`, chair.ID)
-
-	// chairLocationID := ulid.Make().String()
-	// if _, err := tx.ExecContext(
-	// 	ctx,
-	// 	`INSERT INTO chair_locations (id, chair_id, latitude, longitude) VALUES (?, ?, ?, ?)`,
-	// 	chairLocationID, chair.ID, req.Latitude, req.Longitude,
-	// ); err != nil {
-	// 	writeError(w, http.StatusInternalServerError, err)
-	// 	return
-	// }
-
-	// location := &ChairLocation{}
-	// if err := tx.GetContext(ctx, location, `SELECT * FROM chair_locations WHERE id = ?`, chairLocationID); err != nil {
-	// 	writeError(w, http.StatusInternalServerError, err)
-	// 	return
-	// }
-
-	if dbChair.Latitude.Valid && dbChair.Longitude.Valid {
-		if _, err := tx.ExecContext(
-			ctx,
-			`UPDATE chairs SET total_distance = total_distance + ?, total_distance_updated_at = CURRENT_TIMESTAMP(6), latitude = ?, longitude = ? WHERE id = ?`,
-			myAbs(int(dbChair.Latitude.Int64)-req.Latitude)+myAbs(int(dbChair.Longitude.Int64)-req.Longitude),
-			req.Latitude,
-			req.Longitude,
-			chair.ID,
-		); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	} else {
-		if _, err := tx.ExecContext(
-			ctx,
-			`UPDATE chairs SET latitude = ?, longitude = ? WHERE id = ?`,
-			req.Latitude,
-			req.Longitude,
-			chair.ID,
-		); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-
-	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	} else {
-		status, err := getLatestRideStatus(ctx, tx, ride.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		if status != "COMPLETED" && status != "CANCELED" {
-			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
-				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "PICKUP"); err != nil {
-					writeError(w, http.StatusInternalServerError, err)
-					return
-				}
-			}
-
-			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
-				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
-					writeError(w, http.StatusInternalServerError, err)
-					return
-				}
-			}
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
+	// 即時レスポンスを返す
+	w.WriteHeader(http.StatusOK)
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
-		RecordedAt: dbChair.TotalDistanceUpdatedAt.Time.UnixMilli(),
+		RecordedAt: time.Now().UnixMilli(),
 	})
+
+	// 非同期で実行
+	go func() {
+		tx, err := db.Beginx()
+		if err != nil {
+			log.Println("Error starting transaction:", err)
+			return
+		}
+		defer tx.Rollback()
+
+		var dbChair Chair
+		if err := tx.GetContext(ctx, &dbChair, `
+			SELECT id, latitude, longitude, total_distance, total_distance_updated_at
+			FROM chairs WHERE id = ? FOR UPDATE`, chair.ID); err != nil {
+			log.Println("Error fetching chair:", err)
+			return
+		}
+
+		if dbChair.Latitude.Valid && dbChair.Longitude.Valid {
+			// 座標が既に設定されている場合、移動距離を計算して更新
+			newDistance := myAbs(int(dbChair.Latitude.Int64)-req.Latitude) + myAbs(int(dbChair.Longitude.Int64)-req.Longitude)
+
+			if newDistance > 0 { // 実際に移動した場合のみ更新
+				if _, err := tx.ExecContext(
+					ctx,
+					`UPDATE chairs 
+					 SET total_distance = total_distance + ?, 
+						 total_distance_updated_at = CURRENT_TIMESTAMP(6),
+						 latitude = ?, longitude = ?
+					 WHERE id = ?`,
+					newDistance,
+					req.Latitude, req.Longitude, chair.ID,
+				); err != nil {
+					log.Println("Error updating chair:", err)
+					return
+				}
+			}
+		} else {
+			// 初めて座標が設定される場合
+			if _, err := tx.ExecContext(
+				ctx,
+				`UPDATE chairs SET latitude = ?, longitude = ? WHERE id = ?`,
+				req.Latitude, req.Longitude, chair.ID,
+			); err != nil {
+				log.Println("Error updating chair:", err)
+				return
+			}
+		}
+
+		ride := &Ride{}
+		if err := tx.GetContext(ctx, ride, `
+			SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				log.Println("Error fetching ride:", err)
+				return
+			}
+		} else {
+			status, err := getLatestRideStatus(ctx, tx, ride.ID)
+			if err != nil {
+				log.Println("Error fetching latest ride status:", err)
+				return
+			}
+			if status != "COMPLETED" && status != "CANCELED" {
+				if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
+					if _, err := tx.ExecContext(ctx, `
+						INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
+						ulid.Make().String(), ride.ID, "PICKUP"); err != nil {
+						log.Println("Error inserting ride status:", err)
+						return
+					}
+				}
+
+				if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
+					if _, err := tx.ExecContext(ctx, `
+						INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
+						ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
+						log.Println("Error inserting ride status:", err)
+						return
+					}
+				}
+			}
+		}
+
+		if err := tx.Commit(); err != nil {
+			log.Println("Error committing transaction:", err)
+			return
+		}
+	}()
 }
 
 type simpleUser struct {
