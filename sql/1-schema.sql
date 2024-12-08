@@ -36,6 +36,8 @@ CREATE TABLE chairs
 )
   COMMENT = '椅子情報テーブル';
 
+CREATE INDEX owner_id_idx ON chairs (owner_id);
+
 DROP TABLE IF EXISTS chair_locations;
 CREATE TABLE chair_locations
 (
