@@ -18,9 +18,6 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	_ "net/http/pprof"
-
-	_ "github.com/walf443/go-sql-tracer"
-
 	"github.com/felixge/fgprof"
 )
 
@@ -29,8 +26,8 @@ var db *sqlx.DB
 func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
 	go func() {
-		log.Println(http.ListenAndServe(":6060", nil))
-	}()
+ 		log.Println(http.ListenAndServe(":6060", nil))
+ 	}()
 
 	mux := setup()
 	slog.Info("Listening on :8080")
@@ -71,7 +68,7 @@ func setup() http.Handler {
 	dbConfig.DBName = dbname
 	dbConfig.ParseTime = true
 
-	_db, err := sqlx.Connect("mysql:trace", dbConfig.FormatDSN())
+	_db, err := sqlx.Connect("mysql", dbConfig.FormatDSN())
 	if err != nil {
 		panic(err)
 	}
