@@ -1,2 +1,5 @@
 ALTER TABLE chairs ADD COLUMN total_distance INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE chairs ADD COLUMN total_distance_updated_at DATETIME(6);
+
+ALTER TABLE chairs ADD COLUMN latitude INTEGER;
+ALTER TABLE chairs ADD COLUMN longitude INTEGER;
