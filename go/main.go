@@ -161,9 +161,7 @@ FROM chairs
 	for _, chair := range chairs {
 		db.ExecContext(ctx, "UPDATE chairs SET total_distance = ?, total_distance_updated_at = ? WHERE id = ?", chair.TotalDistance, chair.TotalDistanceUpdatedAt, chair.ID)
 		currentChairLocation := &ChairLocation{}
-		if err := db.GetContext(ctx, currentChairLocation, "SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1", chair.ID); err != nil {
-			panic(err)
-		}
+		db.GetContext(ctx, currentChairLocation, "SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1", chair.ID)
 		if currentChairLocation.ID != "" {
 			db.ExecContext(ctx, "UPDATE chairs SET latitude = ?, longitude = ? WHERE id = ?", currentChairLocation.Latitude, currentChairLocation.Longitude, chair.ID)
 		}
