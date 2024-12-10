@@ -236,7 +236,7 @@ func initializePostCoordUpdator() {
 
 // バッチ更新を処理するゴルーチン
 func processCoordinateUpdates() {
-	ticker := time.NewTicker(50 * time.Millisecond) // 1秒ごとにバッチ更新
+	ticker := time.NewTicker(time.Second) // 1秒ごとにバッチ更新
 	defer ticker.Stop()
 
 	for {
