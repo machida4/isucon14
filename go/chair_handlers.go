@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -104,111 +103,111 @@ func myAbs(x int) int {
 	return x
 }
 
-// func chairPostCoordinateOrigin(w http.ResponseWriter, r *http.Request) {
-// 	ctx := r.Context()
-// 	req := &Coordinate{}
-// 	if err := bindJSON(r, req); err != nil {
-// 		w.WriteHeader(http.StatusBadRequest)
-// 		return
-// 	}
+func chairPostCoordinateOrigin(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	req := &Coordinate{}
+	if err := bindJSON(r, req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
-// 	chair := ctx.Value("chair").(*Chair)
+	chair := ctx.Value("chair").(*Chair)
 
-// 	tx, err := db.Beginx()
-// 	if err != nil {
-// 		writeError(w, http.StatusInternalServerError, err)
-// 		return
-// 	}
-// 	defer tx.Rollback()
+	tx, err := db.Beginx()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer tx.Rollback()
 
-// 	var dbChair Chair
-// 	if err := tx.GetContext(ctx, &dbChair, "SELECT * FROM chairs WHERE id = ? FOR UPDATE", chair.ID); err != nil {
-// 		writeError(w, http.StatusInternalServerError, err)
-// 		return
-// 	}
+	var dbChair Chair
+	if err := tx.GetContext(ctx, &dbChair, "SELECT * FROM chairs WHERE id = ? FOR UPDATE", chair.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 
-// 	// beforeLocation := &ChairLocation{}
-// 	// tx.GetContext(ctx, beforeLocation, `SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`, chair.ID)
+	// beforeLocation := &ChairLocation{}
+	// tx.GetContext(ctx, beforeLocation, `SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`, chair.ID)
 
-// 	// chairLocationID := ulid.Make().String()
-// 	// if _, err := tx.ExecContext(
-// 	// 	ctx,
-// 	// 	`INSERT INTO chair_locations (id, chair_id, latitude, longitude) VALUES (?, ?, ?, ?)`,
-// 	// 	chairLocationID, chair.ID, req.Latitude, req.Longitude,
-// 	// ); err != nil {
-// 	// 	writeError(w, http.StatusInternalServerError, err)
-// 	// 	return
-// 	// }
+	// chairLocationID := ulid.Make().String()
+	// if _, err := tx.ExecContext(
+	// 	ctx,
+	// 	`INSERT INTO chair_locations (id, chair_id, latitude, longitude) VALUES (?, ?, ?, ?)`,
+	// 	chairLocationID, chair.ID, req.Latitude, req.Longitude,
+	// ); err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
 
-// 	// location := &ChairLocation{}
-// 	// if err := tx.GetContext(ctx, location, `SELECT * FROM chair_locations WHERE id = ?`, chairLocationID); err != nil {
-// 	// 	writeError(w, http.StatusInternalServerError, err)
-// 	// 	return
-// 	// }
+	// location := &ChairLocation{}
+	// if err := tx.GetContext(ctx, location, `SELECT * FROM chair_locations WHERE id = ?`, chairLocationID); err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
 
-// 	if dbChair.Latitude.Valid && dbChair.Longitude.Valid {
-// 		if _, err := tx.ExecContext(
-// 			ctx,
-// 			`UPDATE chairs SET total_distance = total_distance + ?, total_distance_updated_at = CURRENT_TIMESTAMP(6), latitude = ?, longitude = ? WHERE id = ?`,
-// 			myAbs(int(dbChair.Latitude.Int64)-req.Latitude)+myAbs(int(dbChair.Longitude.Int64)-req.Longitude),
-// 			req.Latitude,
-// 			req.Longitude,
-// 			chair.ID,
-// 		); err != nil {
-// 			writeError(w, http.StatusInternalServerError, err)
-// 			return
-// 		}
-// 	} else {
-// 		if _, err := tx.ExecContext(
-// 			ctx,
-// 			`UPDATE chairs SET latitude = ?, longitude = ? WHERE id = ?`,
-// 			req.Latitude,
-// 			req.Longitude,
-// 			chair.ID,
-// 		); err != nil {
-// 			writeError(w, http.StatusInternalServerError, err)
-// 			return
-// 		}
-// 	}
+	if dbChair.Latitude.Valid && dbChair.Longitude.Valid {
+		if _, err := tx.ExecContext(
+			ctx,
+			`UPDATE chairs SET total_distance = total_distance + ?, total_distance_updated_at = CURRENT_TIMESTAMP(6), latitude = ?, longitude = ? WHERE id = ?`,
+			myAbs(int(dbChair.Latitude.Int64)-req.Latitude)+myAbs(int(dbChair.Longitude.Int64)-req.Longitude),
+			req.Latitude,
+			req.Longitude,
+			chair.ID,
+		); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		if _, err := tx.ExecContext(
+			ctx,
+			`UPDATE chairs SET latitude = ?, longitude = ? WHERE id = ?`,
+			req.Latitude,
+			req.Longitude,
+			chair.ID,
+		); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
 
-// 	ride := &Ride{}
-// 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
-// 		if !errors.Is(err, sql.ErrNoRows) {
-// 			writeError(w, http.StatusInternalServerError, err)
-// 			return
-// 		}
-// 	} else {
-// 		status, err := getLatestRideStatus(ctx, tx, ride.ID)
-// 		if err != nil {
-// 			writeError(w, http.StatusInternalServerError, err)
-// 			return
-// 		}
-// 		if status != "COMPLETED" && status != "CANCELED" {
-// 			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
-// 				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "PICKUP"); err != nil {
-// 					writeError(w, http.StatusInternalServerError, err)
-// 					return
-// 				}
-// 			}
+	ride := &Ride{}
+	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		status, err := getLatestRideStatus(ctx, tx, ride.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if status != "COMPLETED" && status != "CANCELED" {
+			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
+				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "PICKUP"); err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+			}
 
-// 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
-// 				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
-// 					writeError(w, http.StatusInternalServerError, err)
-// 					return
-// 				}
-// 			}
-// 		}
-// 	}
+			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
+				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+			}
+		}
+	}
 
-// 	if err := tx.Commit(); err != nil {
-// 		writeError(w, http.StatusInternalServerError, err)
-// 		return
-// 	}
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 
-// 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
-// 		RecordedAt: dbChair.TotalDistanceUpdatedAt.Time.UnixMilli(),
-// 	})
-// }
+	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
+		RecordedAt: dbChair.TotalDistanceUpdatedAt.Time.UnixMilli(),
+	})
+}
 
 type coordinateUpdate struct {
 	ChairID    string
@@ -218,44 +217,42 @@ type coordinateUpdate struct {
 }
 
 var (
-	updateQueue       = make(chan coordinateUpdate, 1000) // 更新キュー
-	updateBatch       = make([]coordinateUpdate, 0, 100)  // バッチ更新用スライス
-	updateBatchMutex  = sync.Mutex{}
-	updateInterval    = time.Second // 更新間隔
-	updateWorkerCount = 1           // ワーカーの数
+	updateQueue = make(chan coordinateUpdate, 1000) // 更新キュー
+	batch       = make(map[string]*coordinateUpdate)
 )
 
 func initializePostCoordUpdator() {
-	// バッチ更新ワーカーを起動
-	for i := 0; i < updateWorkerCount; i++ {
-		go processCoordinateUpdates()
-	}
+	go processCoordinateUpdates()
 }
 
 // バッチ更新を処理するゴルーチン
 func processCoordinateUpdates() {
+	ticker := time.NewTicker(time.Second) // 1秒ごとにバッチ更新
+	defer ticker.Stop()
+
 	for {
-		time.Sleep(updateInterval)
-
-		updateBatchMutex.Lock()
-		if len(updateBatch) > 0 {
-			batch := updateBatch
-			updateBatch = make([]coordinateUpdate, 0, 100)
-			updateBatchMutex.Unlock()
-
-			// データベースにバッチ更新
-			err := updateCoordinatesInDB(batch)
-			if err != nil {
-				log.Printf("Failed to update coordinates: %v", err)
+		select {
+		case update := <-updateQueue:
+			batch[update.ChairID] = &coordinateUpdate{
+				ChairID:    update.ChairID,
+				Latitude:   update.Latitude,
+				Longitude:  update.Longitude,
+				TotalDelta: batch[update.ChairID].TotalDelta + update.TotalDelta,
 			}
-		} else {
-			updateBatchMutex.Unlock()
+		case <-ticker.C:
+			if len(batch) > 0 {
+				err := updateCoordinatesInDB(batch)
+				if err != nil {
+					log.Printf("Failed to update coordinates: %v", err)
+				}
+				batch = make(map[string]*coordinateUpdate) // バッチをクリア
+			}
 		}
 	}
 }
 
 // データベースにバッチ更新
-func updateCoordinatesInDB(batch []coordinateUpdate) error {
+func updateCoordinatesInDB(batch map[string]*coordinateUpdate) error {
 	tx, err := db.Beginx()
 	if err != nil {
 		return err
@@ -288,19 +285,25 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 
 	chair := ctx.Value("chair").(*Chair)
 
-	// 現在の座標を取得
-	var current Chair
-	err := db.GetContext(ctx, &current, `SELECT latitude, longitude FROM chairs WHERE id = ?`, chair.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+	// 前回の座標を取得
+	coord := &Coordinate{}
+	val, ok := batch[chair.ID]
+	if ok {
+		coord.Latitude = val.Latitude
+		coord.Longitude = val.Longitude
+	} else {
+		var current Chair
+		err := db.GetContext(ctx, &current, `SELECT latitude, longitude FROM chairs WHERE id = ?`, chair.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		coord.Latitude = int(current.Latitude.Int64)
+		coord.Longitude = int(current.Longitude.Int64)
 	}
 
 	// 移動距離を計算
-	totalDelta := 0
-	if current.Latitude.Valid && current.Longitude.Valid {
-		totalDelta = myAbs(int(current.Latitude.Int64)-req.Latitude) + myAbs(int(current.Longitude.Int64)-req.Longitude)
-	}
+	totalDelta := myAbs(coord.Latitude-req.Latitude) + myAbs(coord.Longitude-req.Longitude)
 
 	// 更新データをキューに追加
 	updateQueue <- coordinateUpdate{
