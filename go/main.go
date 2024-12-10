@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"strconv"
 
+	"github.com/coocood/freecache"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-sql-driver/mysql"
@@ -23,6 +24,7 @@ import (
 	"github.com/felixge/fgprof"
 )
 
+var cache *freecache.Cache
 var db *sqlx.DB
 
 func main() {
@@ -30,6 +32,8 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe(":6060", nil))
 	}()
+
+	cache = freecache.NewCache(100 * 1024 * 1024) // 100MiB
 
 	mux := setup()
 	slog.Info("Listening on :8080")
@@ -76,6 +80,8 @@ func setup() http.Handler {
 		panic(err)
 	}
 	db = _db
+	db.SetMaxIdleConns(8)
+	db.SetMaxOpenConns(16)
 
 	mux := chi.NewRouter()
 	mux.Use(middleware.Logger)
@@ -160,6 +166,11 @@ FROM chairs
 
 	for _, chair := range chairs {
 		db.ExecContext(ctx, "UPDATE chairs SET total_distance = ?, total_distance_updated_at = ? WHERE id = ?", chair.TotalDistance, chair.TotalDistanceUpdatedAt, chair.ID)
+		currentChairLocation := &ChairLocation{}
+		db.GetContext(ctx, currentChairLocation, "SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1", chair.ID)
+		if currentChairLocation.ID != "" {
+			db.ExecContext(ctx, "UPDATE chairs SET latitude = ?, longitude = ? WHERE id = ?", currentChairLocation.Latitude, currentChairLocation.Longitude, chair.ID)
+		}
 	}
 }
 
