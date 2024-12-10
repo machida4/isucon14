@@ -225,7 +225,7 @@ var (
 	updateWorkerCount = 1           // ワーカーの数
 )
 
-func init() {
+func initializePostCoordUpdator() {
 	// バッチ更新ワーカーを起動
 	for i := 0; i < updateWorkerCount; i++ {
 		go processCoordinateUpdates()
