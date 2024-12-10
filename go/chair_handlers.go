@@ -171,6 +171,7 @@ func chairPostCoordinateOrigin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ride := &Ride{}
+	status2 := ""
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusInternalServerError, err)
@@ -188,6 +189,7 @@ func chairPostCoordinateOrigin(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+				status2 = "PICKUP"
 			}
 
 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
@@ -195,6 +197,7 @@ func chairPostCoordinateOrigin(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+				status2 = "ARRIVED"
 			}
 		}
 	}
@@ -202,6 +205,10 @@ func chairPostCoordinateOrigin(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+
+	if status2 != "" {
+		cache.Set([]byte("latest.ride."+ride.ID), []byte(status2), 10)
 	}
 
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
@@ -262,7 +269,7 @@ func updateCoordinatesInDB(batch map[string]*coordinateUpdate) error {
 	for _, update := range batch {
 		_, err := tx.Exec(
 			`UPDATE chairs 
-			 SET latitude = ?, longitude = ?, total_distance = total_distance + ? 
+			 SET latitude = ?, longitude = ?, total_distance = total_distance + ? , total_distance_updated_at = CURRENT_TIMESTAMP(6)
 			 WHERE id = ?`,
 			update.Latitude, update.Longitude, update.TotalDelta, update.ChairID,
 		)
@@ -284,6 +291,12 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chair := ctx.Value("chair").(*Chair)
+	tx, err := db.Beginx()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer tx.Rollback()
 
 	// 前回の座標を取得
 	coord := &Coordinate{}
@@ -293,7 +306,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		coord.Longitude = val.Longitude
 	} else {
 		var current Chair
-		err := db.GetContext(ctx, &current, `SELECT latitude, longitude FROM chairs WHERE id = ?`, chair.ID)
+		err := tx.GetContext(ctx, &current, `SELECT latitude, longitude FROM chairs WHERE id = ?`, chair.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -311,6 +324,47 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		Latitude:   req.Latitude,
 		Longitude:  req.Longitude,
 		TotalDelta: totalDelta,
+	}
+
+	ride := &Ride{}
+	status2 := ""
+	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		status, err := getLatestRideStatus(ctx, tx, ride.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if status != "COMPLETED" && status != "CANCELED" {
+			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
+				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "PICKUP"); err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+				status2 = "PICKUP"
+			}
+
+			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
+				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+				status2 = "ARRIVED"
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	if status2 != "" {
+		cache.Set([]byte("latest.ride."+ride.ID), []byte(status2), 10)
 	}
 
 	// レスポンスを即時返却
