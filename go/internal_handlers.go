@@ -12,22 +12,23 @@ import (
 
 func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	// MEMO: 一旦最も待たせているリクエストに適当な空いている椅子マッチさせる実装とする。おそらくもっといい方法があるはず…
+	rides := []Ride{}
+
+	chairs := []Chair{}
 	tx, err := db.Beginx()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	defer tx.Rollback()
-	// MEMO: 一旦最も待たせているリクエストに適当な空いている椅子マッチさせる実装とする。おそらくもっといい方法があるはず…
-	rides := []Ride{}
-
-	chairs := []Chair{}
 	if err := tx.SelectContext(ctx, &chairs, "SELECT * FROM chairs c WHERE c.is_active = TRUE AND latitude IS NOT NULL"); err != nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
+	if err := db.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -35,8 +36,15 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	tx.Commit()
 
 	for _, v := range rides {
+		tx, err := db.Beginx()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		defer tx.Rollback()
 		sort.Slice(chairs, func(i, j int) bool {
 			return calculateDistance(v.PickupLatitude, v.PickupLongitude, int(chairs[i].Latitude.Int64), int(chairs[i].Longitude.Int64)) < calculateDistance(v.PickupLatitude, v.PickupLongitude, int(chairs[j].Latitude.Int64), int(chairs[j].Longitude.Int64))
 		})
@@ -47,8 +55,9 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		chairs = append(chairs[:i], chairs[i+1:]...)
+		tx.Commit()
 	}
-	tx.Commit()
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
