@@ -287,7 +287,14 @@ type executableGet interface {
 
 func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (string, error) {
 	status := ""
+	if item, err := cache.Get([]byte("latest.ride." + rideID)); err == nil {
+		status = string(item)
+		return status, nil
+	}
 	if err := tx.GetContext(ctx, &status, `SELECT status FROM ride_statuses WHERE ride_id = ? ORDER BY created_at DESC LIMIT 1`, rideID); err != nil {
+		return "", err
+	}
+	if err := cache.Set([]byte("latest.ride."+rideID), []byte(status), 10); err != nil {
 		return "", err
 	}
 	return status, nil
@@ -434,6 +441,8 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cache.Set([]byte("latest.ride."+rideID), []byte("MATCHING"), 10)
+
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
 		RideID: rideID,
 		Fare:   fare,
@@ -572,6 +581,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	status2 := "COMPLETED"
 
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -626,6 +636,8 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	cache.Set([]byte("latest.ride."+rideID), []byte(status2), 10)
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
