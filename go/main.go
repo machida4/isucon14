@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,12 +18,21 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+
+	_ "net/http/pprof"
+
+	"github.com/felixge/fgprof"
 )
 
 var cache *freecache.Cache
 var db *sqlx.DB
 
 func main() {
+	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
+	go func() {
+		log.Println(http.ListenAndServe(":6060", nil))
+	}()
+
 	cache = freecache.NewCache(100 * 1024 * 1024) // 100MiB
 
 	mux := setup()
@@ -72,7 +82,7 @@ func setup() http.Handler {
 	db = _db
 
 	mux := chi.NewRouter()
-	// mux.Use(middleware.Logger)
+	mux.Use(middleware.Logger)
 	mux.Use(middleware.Recoverer)
 	mux.HandleFunc("POST /api/initialize", postInitialize)
 
@@ -206,17 +216,17 @@ func writeJSON(w http.ResponseWriter, statusCode int, v interface{}) {
 }
 
 func writeError(w http.ResponseWriter, statusCode int, err error) {
-	// w.Header().Set("Content-Type", "application/json;charset=utf-8")
-	// w.WriteHeader(statusCode)
-	// buf, marshalError := json.Marshal(map[string]string{"message": err.Error()})
-	// if marshalError != nil {
-	// 	w.WriteHeader(http.StatusInternalServerError)
-	// 	w.Write([]byte(`{"error":"marshaling error failed"}`))
-	// 	return
-	// }
-	// w.Write(buf)
+	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	w.WriteHeader(statusCode)
+	buf, marshalError := json.Marshal(map[string]string{"message": err.Error()})
+	if marshalError != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"marshaling error failed"}`))
+		return
+	}
+	w.Write(buf)
 
-	// slog.Error("error response wrote", err)
+	slog.Error("error response wrote", err)
 }
 
 func secureRandomStr(b int) string {
