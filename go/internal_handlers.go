@@ -38,7 +38,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		chairs = append(chairs[:i], chairs[i+1:]...)
+		chairs = append([]Chair{}, chairs[i+1:]...)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
