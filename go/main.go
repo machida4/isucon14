@@ -136,8 +136,6 @@ func logFilterMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 特定のエンドポイントのログをスキップ
 		if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/internal/matching") {
-			// 次のハンドラに処理を渡す
-			next.ServeHTTP(w, r)
 			return
 		}
 
