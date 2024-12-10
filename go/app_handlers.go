@@ -979,7 +979,7 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
 	for _, chair := range chairs {
 		skip := false
-		for rideID, status := range rideStatuses {
+		for _, status := range rideStatuses {
 			if status != "COMPLETED" {
 				skip = true
 				break
@@ -1006,38 +1006,21 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-		// 最新の位置情報を取得
-		// chairLocation := &ChairLocation{}
-		// err = tx.GetContext(
-		// 	ctx,
-		// 	chairLocation,
-		// 	`SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`,
-		// 	chair.ID,
-		// )
-		// if err != nil {
-		// 	if errors.Is(err, sql.ErrNoRows) {
-		// 		continue
-		// 	}
-		// 	writeError(w, http.StatusInternalServerError, err)
-		// 	return
-		// }
-
-		if !chair.Latitude.Valid || !chair.Longitude.Valid {
-			continue
-		}
-
-		if calculateDistance(coordinate.Latitude, coordinate.Longitude, int(chair.Latitude.Int64), int(chair.Longitude.Int64)) <= distance {
-			nearbyChairs = append(nearbyChairs, appGetNearbyChairsResponseChair{
-				ID:    chair.ID,
-				Name:  chair.Name,
-				Model: chair.Model,
-				CurrentCoordinate: Coordinate{
-					Latitude:  int(chair.Latitude.Int64),
-					Longitude: int(chair.Longitude.Int64),
-				},
-			})
-		}
-	}
+	// 最新の位置情報を取得
+	// chairLocation := &ChairLocation{}
+	// err = tx.GetContext(
+	// 	ctx,
+	// 	chairLocation,
+	// 	`SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`,
+	// 	chair.ID,
+	// )
+	// if err != nil {
+	// 	if errors.Is(err, sql.ErrNoRows) {
+	// 		continue
+	// 	}
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
 
 	retrievedAt := &time.Time{}
 	err = tx.GetContext(
