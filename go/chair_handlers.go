@@ -329,9 +329,26 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		coord = &Coordinate{
-			Latitude:  int(current.Latitude.Int64),
-			Longitude: int(current.Longitude.Int64),
+		if current.Latitude.Valid && current.Longitude.Valid {
+			coord = &Coordinate{
+				Latitude:  int(current.Latitude.Int64),
+				Longitude: int(current.Longitude.Int64),
+			}
+		} else {
+			if _, err := tx.ExecContext(
+				ctx,
+				`UPDATE chairs SET latitude = ?, longitude = ? WHERE id = ?`,
+				req.Latitude,
+				req.Longitude,
+				chair.ID,
+			); err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			coord = &Coordinate{
+				Latitude:  req.Latitude,
+				Longitude: req.Longitude,
+			}
 		}
 	}
 	batchMutex.Unlock()
