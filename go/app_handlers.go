@@ -660,6 +660,18 @@ type appGetNotificationResponseChairStats struct {
 	TotalEvaluationAvg float64 `json:"total_evaluation_avg"`
 }
 
+func getRetryAfterMs() int {
+	firstRetryAfterMs := 60
+	lastRetryAfterMs := 1500
+	elapsedTime := time.Now().Sub(startedTime).Seconds()
+
+	retryAfterMs := firstRetryAfterMs + (lastRetryAfterMs-firstRetryAfterMs)*int(elapsedTime)/60
+	if retryAfterMs > lastRetryAfterMs {
+		retryAfterMs = lastRetryAfterMs
+	}
+	return retryAfterMs
+}
+
 func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user := ctx.Value("user").(*User)
@@ -681,7 +693,7 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 		LIMIT 1`, user.ID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, http.StatusOK, &appGetNotificationResponse{
-				RetryAfterMs: 240,
+				RetryAfterMs: getRetryAfterMs(),
 			})
 			return
 		}
@@ -740,7 +752,7 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: ride.CreatedAt.UnixMilli(),
 			UpdateAt:  ride.UpdatedAt.UnixMilli(),
 		},
-		RetryAfterMs: 240,
+		RetryAfterMs: getRetryAfterMs(),
 	}
 
 	// チェア情報の取得（必要な場合のみ）

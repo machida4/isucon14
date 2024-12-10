@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"time"
 
 	"github.com/coocood/freecache"
 	"github.com/go-chi/chi/v5"
@@ -26,6 +27,7 @@ import (
 
 var cache *freecache.Cache
 var db *sqlx.DB
+var startedTime time.Time
 
 func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
@@ -193,6 +195,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	initChairDistances(ctx)
+	startedTime = time.Now()
 
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
