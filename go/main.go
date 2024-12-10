@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/coocood/freecache"
@@ -78,7 +77,6 @@ func setup() http.Handler {
 	db.SetMaxOpenConns(16)
 
 	mux := chi.NewRouter()
-	mux.Use(logFilterMiddleware)
 	mux.Use(middleware.Logger)
 	mux.Use(middleware.Recoverer)
 	mux.HandleFunc("POST /api/initialize", postInitialize)
@@ -123,19 +121,6 @@ func setup() http.Handler {
 	}
 
 	return mux
-}
-
-func logFilterMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 特定のエンドポイントのログをスキップ
-		if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/internal/matching") {
-			return
-		}
-
-		// ログ記録対象の場合
-		fmt.Printf("%s %s from %s\n", r.Method, r.URL.String(), r.RemoteAddr)
-		next.ServeHTTP(w, r)
-	})
 }
 
 type postInitializeRequest struct {
