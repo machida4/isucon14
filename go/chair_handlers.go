@@ -351,7 +351,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("not assigned to this ride"))
 		return
 	}
-	status := ""
+	status2 := ""
 
 	switch req.Status {
 	// Acknowledge the ride
@@ -360,7 +360,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		status = "ENROUTE"
+		status2 = "ENROUTE"
 	// After Picking up user
 	case "CARRYING":
 		status, err := getLatestRideStatus(ctx, tx, ride.ID)
@@ -376,7 +376,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		status = "CARRYING"
+		status2 = "CARRYING"
 	default:
 		writeError(w, http.StatusBadRequest, errors.New("invalid status"))
 	}
@@ -386,8 +386,8 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if status != "" {
-		cache.Set([]byte("latest.ride."+rideID), []byte(status), 10)
+	if status2 != "" {
+		cache.Set([]byte("latest.ride."+rideID), []byte(status2), 10)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
