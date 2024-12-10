@@ -119,6 +119,7 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 		TotalSales: 0,
 	}
 
+	// N+1の匂い
 	modelSalesByModel := map[string]int{}
 	for _, chair := range chairs {
 		rides := []Ride{}
