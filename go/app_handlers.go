@@ -681,7 +681,7 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 		LIMIT 1`, user.ID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, http.StatusOK, &appGetNotificationResponse{
-				RetryAfterMs: 1000,
+				RetryAfterMs: 240,
 			})
 			return
 		}
@@ -740,7 +740,7 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: ride.CreatedAt.UnixMilli(),
 			UpdateAt:  ride.UpdatedAt.UnixMilli(),
 		},
-		RetryAfterMs: 1000,
+		RetryAfterMs: 240,
 	}
 
 	// チェア情報の取得（必要な場合のみ）
