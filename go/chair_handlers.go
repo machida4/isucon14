@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -226,6 +227,7 @@ type coordinateUpdate struct {
 var (
 	updateQueue = make(chan coordinateUpdate, 1000) // 更新キュー
 	batch       = make(map[string]*coordinateUpdate)
+	batchMutex  sync.Mutex
 )
 
 func initializePostCoordUpdator() {
@@ -234,26 +236,40 @@ func initializePostCoordUpdator() {
 
 // バッチ更新を処理するゴルーチン
 func processCoordinateUpdates() {
-	ticker := time.NewTicker(time.Second) // 1秒ごとにバッチ更新
+	ticker := time.NewTicker(50 * time.Millisecond) // 1秒ごとにバッチ更新
 	defer ticker.Stop()
 
 	for {
 		select {
 		case update := <-updateQueue:
-			batch[update.ChairID] = &coordinateUpdate{
-				ChairID:    update.ChairID,
-				Latitude:   update.Latitude,
-				Longitude:  update.Longitude,
-				TotalDelta: batch[update.ChairID].TotalDelta + update.TotalDelta,
+			batchMutex.Lock()
+			existing, exists := batch[update.ChairID]
+			if exists {
+				// 既存のデータを更新
+				existing.Latitude = update.Latitude
+				existing.Longitude = update.Longitude
+				existing.TotalDelta += update.TotalDelta
+			} else {
+				// 新しいデータを追加
+				batch[update.ChairID] = &coordinateUpdate{
+					ChairID:    update.ChairID,
+					Latitude:   update.Latitude,
+					Longitude:  update.Longitude,
+					TotalDelta: update.TotalDelta,
+				}
 			}
+			batchMutex.Unlock()
 		case <-ticker.C:
+			batchMutex.Lock()
 			if len(batch) > 0 {
 				err := updateCoordinatesInDB(batch)
 				if err != nil {
 					log.Printf("Failed to update coordinates: %v", err)
 				}
-				batch = make(map[string]*coordinateUpdate) // バッチをクリア
+				// バッチをクリア
+				batch = make(map[string]*coordinateUpdate)
 			}
+			batchMutex.Unlock()
 		}
 	}
 }
@@ -299,21 +315,20 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	// 前回の座標を取得
-	coord := &Coordinate{}
-	val, ok := batch[chair.ID]
-	if ok {
-		coord.Latitude = val.Latitude
-		coord.Longitude = val.Longitude
-	} else {
-		var current Chair
-		err := tx.GetContext(ctx, &current, `SELECT latitude, longitude FROM chairs WHERE id = ?`, chair.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+	var coord *Coordinate
+	batchMutex.Lock()
+	if val, ok := batch[chair.ID]; ok {
+		coord = &Coordinate{
+			Latitude:  val.Latitude,
+			Longitude: val.Longitude,
 		}
-		coord.Latitude = int(current.Latitude.Int64)
-		coord.Longitude = int(current.Longitude.Int64)
+	} else {
+		coord = &Coordinate{
+			Latitude:  int(chair.Latitude.Int64),
+			Longitude: int(chair.Longitude.Int64),
+		}
 	}
+	batchMutex.Unlock()
 
 	// 移動距離を計算
 	totalDelta := myAbs(coord.Latitude-req.Latitude) + myAbs(coord.Longitude-req.Longitude)
