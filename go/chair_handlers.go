@@ -323,9 +323,15 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 			Longitude: val.Longitude,
 		}
 	} else {
+		var current Chair
+		err := tx.GetContext(ctx, &current, `SELECT latitude, longitude FROM chairs WHERE id = ?`, chair.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 		coord = &Coordinate{
-			Latitude:  int(chair.Latitude.Int64),
-			Longitude: int(chair.Longitude.Int64),
+			Latitude:  int(current.Latitude.Int64),
+			Longitude: int(current.Longitude.Int64),
 		}
 	}
 	batchMutex.Unlock()
