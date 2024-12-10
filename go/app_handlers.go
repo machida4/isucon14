@@ -935,7 +935,6 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-
 	chairs := []Chair{}
 	err = tx.SelectContext(
 		ctx,
@@ -948,22 +947,39 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nearbyChairs := []appGetNearbyChairsResponseChair{}
-	for _, chair := range chairs {
-		rides := []*Ride{}
-		if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id = ? ORDER BY created_at DESC`, chair.ID); err != nil {
+	chairIDs := make([]string, len(chairs))
+	for i, chair := range chairs {
+		chairIDs[i] = chair.ID
+	}
+
+	rideStatuses := map[string]string{}
+	if len(chairIDs) > 0 {
+		query, args, err := sqlx.In(`SELECT ride_id, status FROM ride_statuses WHERE ride_id IN (SELECT id FROM rides WHERE chair_id IN (?) ORDER BY created_at DESC) ORDER BY created_at DESC`, chairIDs)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-
-		skip := false
-		for _, ride := range rides {
-			// 過去にライドが存在し、かつ、それが完了していない場合はスキップ
-			status, err := getLatestRideStatus(ctx, tx, ride.ID)
-			if err != nil {
+		query = tx.Rebind(query)
+		rows, err := tx.QueryxContext(ctx, query, args...)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var rideID, status string
+			if err := rows.Scan(&rideID, &status); err != nil {
 				writeError(w, http.StatusInternalServerError, err)
 				return
 			}
+			rideStatuses[rideID] = status
+		}
+	}
+
+	nearbyChairs := []appGetNearbyChairsResponseChair{}
+	for _, chair := range chairs {
+		skip := false
+		for rideID, status := range rideStatuses {
 			if status != "COMPLETED" {
 				skip = true
 				break
@@ -972,6 +988,23 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		if skip {
 			continue
 		}
+
+		if !chair.Latitude.Valid || !chair.Longitude.Valid {
+			continue
+		}
+
+		if calculateDistance(coordinate.Latitude, coordinate.Longitude, int(chair.Latitude.Int64), int(chair.Longitude.Int64)) <= distance {
+			nearbyChairs = append(nearbyChairs, appGetNearbyChairsResponseChair{
+				ID:    chair.ID,
+				Name:  chair.Name,
+				Model: chair.Model,
+				CurrentCoordinate: Coordinate{
+					Latitude:  int(chair.Latitude.Int64),
+					Longitude: int(chair.Longitude.Int64),
+				},
+			})
+		}
+	}
 
 		// 最新の位置情報を取得
 		// chairLocation := &ChairLocation{}
