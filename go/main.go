@@ -77,7 +77,7 @@ func setup() http.Handler {
 	db.SetMaxOpenConns(16)
 
 	mux := chi.NewRouter()
-	// mux.Use(middleware.Logger)
+	mux.Use(middleware.Logger)
 	mux.Use(middleware.Recoverer)
 	mux.HandleFunc("POST /api/initialize", postInitialize)
 
@@ -212,17 +212,17 @@ func writeJSON(w http.ResponseWriter, statusCode int, v interface{}) {
 }
 
 func writeError(w http.ResponseWriter, statusCode int, err error) {
-	// w.Header().Set("Content-Type", "application/json;charset=utf-8")
-	// w.WriteHeader(statusCode)
-	// buf, marshalError := json.Marshal(map[string]string{"message": err.Error()})
-	// if marshalError != nil {
-	// 	w.WriteHeader(http.StatusInternalServerError)
-	// 	w.Write([]byte(`{"error":"marshaling error failed"}`))
-	// 	return
-	// }
-	// w.Write(buf)
+	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	w.WriteHeader(statusCode)
+	buf, marshalError := json.Marshal(map[string]string{"message": err.Error()})
+	if marshalError != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"marshaling error failed"}`))
+		return
+	}
+	w.Write(buf)
 
-	// slog.Error("error response wrote", err)
+	slog.Error("error response wrote", err)
 }
 
 func secureRandomStr(b int) string {
