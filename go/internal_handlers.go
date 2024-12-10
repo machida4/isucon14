@@ -6,20 +6,24 @@ import (
 	"errors"
 	"net/http"
 	"sort"
+
+	"github.com/jmoiron/sqlx"
 )
 
 func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	tx := db.MustBegin()
+	defer tx.Rollback()
 	// MEMO: 一旦最も待たせているリクエストに適当な空いている椅子マッチさせる実装とする。おそらくもっといい方法があるはず…
 	rides := []Ride{}
 
 	chairs := []Chair{}
-	if err := db.SelectContext(ctx, &chairs, "SELECT * FROM chairs c WHERE c.is_active = TRUE AND latitude IS NOT NULL"); err != nil {
+	if err := tx.SelectContext(ctx, &chairs, "SELECT * FROM chairs c WHERE c.is_active = TRUE AND latitude IS NOT NULL"); err != nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	if err := db.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
+	if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -34,20 +38,21 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		})
 		var i int
 		var matched bool
-		if i, matched = matchRide(ctx, v, chairs); !matched {
+		if i, matched = matchRide(tx, ctx, v, chairs); !matched {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		chairs = append(chairs[:i], chairs[i+1:]...)
 	}
+	tx.Commit()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // rideを受け取って、マッチングさせる。マッチングできたらtrueを返す
-func matchRide(ctx context.Context, ride Ride, chairs []Chair) (int, bool) {
+func matchRide(tx *sqlx.Tx, ctx context.Context, ride Ride, chairs []Chair) (int, bool) {
 	for i, chair := range chairs {
-		if isChairEmpty(ctx, chair) {
-			if err := saveMatchedRide(ctx, ride, chair); err != nil {
+		if isChairEmpty(tx, ctx, chair) {
+			if err := saveMatchedRide(tx, ctx, ride, chair); err != nil {
 				return i, false
 			}
 			return i, true
@@ -57,15 +62,15 @@ func matchRide(ctx context.Context, ride Ride, chairs []Chair) (int, bool) {
 	return len(chairs), false
 }
 
-func isChairEmpty(ctx context.Context, chair Chair) bool {
+func isChairEmpty(tx *sqlx.Tx, ctx context.Context, chair Chair) bool {
 	empty := false
-	if err := db.GetContext(ctx, &empty, "SELECT COUNT(*) = 0 FROM (SELECT COUNT(chair_sent_at) = 6 AS completed FROM ride_statuses WHERE ride_id IN (SELECT id FROM rides WHERE chair_id = ?) GROUP BY ride_id) is_completed WHERE completed = FALSE", chair.ID); err != nil {
+	if err := tx.GetContext(ctx, &empty, "SELECT COUNT(*) = 0 FROM (SELECT COUNT(chair_sent_at) = 6 AS completed FROM ride_statuses WHERE ride_id IN (SELECT id FROM rides WHERE chair_id = ?) GROUP BY ride_id) is_completed WHERE completed = FALSE", chair.ID); err != nil {
 		return false
 	}
 	return empty
 }
 
-func saveMatchedRide(ctx context.Context, ride Ride, chair Chair) error {
-	_, err := db.ExecContext(ctx, "UPDATE rides SET chair_id = ? WHERE id = ?", chair.ID, ride.ID)
+func saveMatchedRide(tx *sqlx.Tx, ctx context.Context, ride Ride, chair Chair) error {
+	_, err := tx.ExecContext(ctx, "UPDATE rides SET chair_id = ? WHERE id = ?", chair.ID, ride.ID)
 	return err
 }
