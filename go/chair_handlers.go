@@ -338,7 +338,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		var current Chair
-		err := tx.GetContext(ctx, &current, `SELECT latitude, longitude FROM chairs WHERE id = ? FOR UPDATE`, chair.ID)
+		err := tx.GetContext(ctx, &current, `SELECT latitude, longitude FROM chairs WHERE id = ?`, chair.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
