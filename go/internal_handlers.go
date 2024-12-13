@@ -4,27 +4,39 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net/http"
 	"sort"
 )
 
-func internalGetMatching(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func initializeMatching() {
+	go processMatching()
+}
+
+// バッチ更新を処理するゴルーチン
+func processMatching() {
+
+	for {
+		ctx := context.Background()
+		internalGetMatching(ctx)
+	}
+}
+
+func internalGetMatching(ctx context.Context) {
+	//ctx := r.Context()
 	// MEMO: 一旦最も待たせているリクエストに適当な空いている椅子マッチさせる実装とする。おそらくもっといい方法があるはず…
 	rides := []Ride{}
 
 	chairs := []Chair{}
 	if err := db.SelectContext(ctx, &chairs, "SELECT * FROM chairs c WHERE c.is_active = TRUE AND latitude IS NOT NULL"); err != nil {
-		w.WriteHeader(http.StatusNoContent)
+		//w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
 	if err := db.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			w.WriteHeader(http.StatusNoContent)
+			//w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err)
+		//writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -35,12 +47,12 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		var i int
 		var matched bool
 		if i, matched = matchRide(ctx, v, chairs); !matched {
-			w.WriteHeader(http.StatusNoContent)
+			//w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		chairs = append(chairs[:i], chairs[i+1:]...)
 	}
-	w.WriteHeader(http.StatusNoContent)
+	//w.WriteHeader(http.StatusNoContent)
 }
 
 // rideを受け取って、マッチングさせる。マッチングできたらtrueを返す

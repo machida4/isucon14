@@ -115,9 +115,9 @@ func setup() http.Handler {
 	}
 
 	// internal handlers
-	{
-		mux.HandleFunc("GET /api/internal/matching", internalGetMatching)
-	}
+	// {
+	// 	mux.HandleFunc("GET /api/internal/matching", internalGetMatching)
+	// }
 
 	return mux
 }
@@ -186,6 +186,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 
 	initChairDistances(ctx)
 	startedTime = time.Now()
+	initializeMatching()
 
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
