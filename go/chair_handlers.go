@@ -282,13 +282,27 @@ func updateCoordinatesInDB(batch map[string]*coordinateUpdate) error {
 	}
 	defer tx.Rollback()
 
+	// バルク更新用クエリ
+	query := `INSERT INTO chairs (id, latitude, longitude, total_distance, total_distance_updated_at) 
+		VALUES (:id, :latitude, :longitude, :total_distance, CURRENT_TIMESTAMP(6))
+		ON DUPLICATE KEY UPDATE 
+		latitude = VALUES(latitude), 
+		longitude = VALUES(longitude), 
+		total_distance = total_distance + VALUES(total_distance), 
+		total_distance_updated_at = VALUES(total_distance_updated_at)`
+
+	updates := make([]map[string]interface{}, 0, len(batch))
 	for _, update := range batch {
-		_, err := tx.Exec(
-			`UPDATE chairs 
-			 SET latitude = ?, longitude = ?, total_distance = total_distance + ? , total_distance_updated_at = CURRENT_TIMESTAMP(6)
-			 WHERE id = ?`,
-			update.Latitude, update.Longitude, update.TotalDelta, update.ChairID,
-		)
+		updates = append(updates, map[string]interface{}{
+			"id":             update.ChairID,
+			"latitude":       update.Latitude,
+			"longitude":      update.Longitude,
+			"total_distance": update.TotalDelta,
+		})
+	}
+
+	if len(updates) > 0 {
+		_, err = tx.NamedExec(query, updates)
 		if err != nil {
 			return err
 		}
@@ -351,18 +365,9 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	batchMutex.Unlock()
 
 	// 移動距離を計算
 	totalDelta := myAbs(coord.Latitude-req.Latitude) + myAbs(coord.Longitude-req.Longitude)
-
-	// 更新データをキューに追加
-	updateQueue <- coordinateUpdate{
-		ChairID:    chair.ID,
-		Latitude:   req.Latitude,
-		Longitude:  req.Longitude,
-		TotalDelta: totalDelta,
-	}
 
 	ride := &Ride{}
 	status2 := ""
@@ -409,6 +414,15 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
 		RecordedAt: time.Now().UnixMilli(),
 	})
+
+	// 更新データをキューに追加
+	updateQueue <- coordinateUpdate{
+		ChairID:    chair.ID,
+		Latitude:   req.Latitude,
+		Longitude:  req.Longitude,
+		TotalDelta: totalDelta,
+	}
+	batchMutex.Unlock()
 }
 
 type simpleUser struct {
